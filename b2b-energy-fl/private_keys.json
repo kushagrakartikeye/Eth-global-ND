@@ -1,0 +1,14 @@
+{
+    "client1": {
+        "identity_key": "8c0169aed0e4bfc70534db8453f376d39596206238a45c08f63e6b4e2d08fe8b",
+        "wallet_key": "Bdtp67LWAdREWosK7DDM1u2izrwJ+zEX8OdxiVJWN2U="
+    },
+    "coordinator": {
+        "identity_key": "54f2164cb64d015de89650a19786509652bc6649b5c29371dc7c3d156c96a0a8",
+        "wallet_key": "Y63ieFfadWWVp99sFCyvZdoZM6LUYCZKSQ8A8HqE/Ws="
+    },
+    "aggregator": {
+        "identity_key": "fd2cf3b2ed92fc1856db864cb99692b292dc4803ba370b2ebe83e39b2e28038f",
+        "wallet_key": "WRY4Q8Rzz+eL8hHXuAsMs4xdBtcW1dxSDhAWoDJirp0="
+    }
+}
