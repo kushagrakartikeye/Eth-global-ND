@@ -1,6 +1,6 @@
 {
-  "reward": "0xfaAddC93baf78e89DCf37bA67943E1bE8F37Bb8c",
-  "coordinator": "0x276C216D241856199A83bf27b2286659e5b877D3",
+  "reward": "0x3aAde2dCD2Df6a8cAc689EE797591b2913658659",
+  "coordinator": "0xab16A69A5a8c12C732e0DEFF4BE56A70bb64c926",
   "rpc": "http://127.0.0.1:8546",
   "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "owner_pk": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",

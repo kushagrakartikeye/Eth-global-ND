@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from models import FedPersonalizedMLP  # personalized model
+from models import FedPersonalizedMLP  # your personalized model
 from uagents import Agent, Context, Protocol
 
 with open("artifacts/contracts/Coordinator.sol/Coordinator.json", "r") as f:
@@ -70,16 +70,10 @@ def load_global_model(path_npz):
 def save_masked_delta(masked_delta, path_npz):
     np.savez(path_npz, **masked_delta)
 
-# --- Parse arguments ---
-parser = argparse.ArgumentParser()
-parser.add_argument("--client", type=str, default="client1")
-parser.add_argument("--port", type=int, default=8000)
-parser.add_argument("--round_dir", type=str, default="aggregator/round")
-args = parser.parse_args()
+# --- Agent logic ---
+AGENT_NAME = os.environ.get("AGENT_NAME", "client1")
 
-AGENT_NAME = args.client
-ROUND_DIR = args.round_dir
-
+# Load keys and addresses from deployed.json automatically
 with open("deployed.json", "r") as f:
     deployed = json.load(f)
 
@@ -90,6 +84,8 @@ CLIENT_ADDR = client_addrs.get(AGENT_NAME)
 
 if not CLIENT_PK or len(CLIENT_PK) != 64 or not all(c in '0123456789abcdefABCDEF' for c in CLIENT_PK):
     raise ValueError(f"CLIENT_PK for {AGENT_NAME} not found or invalid in deployed.json!")
+
+ROUND_DIR = os.environ.get("ROUND_DIR", "aggregator/round")
 
 client_agent = Agent(name=AGENT_NAME)
 
@@ -112,7 +108,7 @@ async def participate_round(ctx: Context):
         current_round = coord.functions.currentRound().call()
         already_submitted = coord.functions.submitted(current_round, acc.address).call()
         if already_submitted:
-            print(f"{AGENT_NAME} has already submitted for round {current_round}, skipping.")
+            print(f"{AGENT_NAME} has already submitted for round {current_round}, skipping training and submission.")
             return
         os.makedirs(ROUND_DIR, exist_ok=True)
         X = np.load(f"client/data/{AGENT_NAME}/X.npy")
@@ -150,4 +146,4 @@ async def participate_round(ctx: Context):
         raise
 
 if __name__ == "__main__":
-    client_agent.run(host="0.0.0.0", port=args.port)
+    client_agent.run()
