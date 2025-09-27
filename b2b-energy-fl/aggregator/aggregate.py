@@ -1,3 +1,147 @@
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import argparse
+import json
+import numpy as np
+import torch
+import torch.nn as nn
+from web3 import Web3
+from hexbytes import HexBytes
+
+from models import FedPersonalizedMLP, merge_global_state
+
+with open("artifacts/contracts/Coordinator.sol/Coordinator.json", "r") as f:
+    ABI_COORD = json.load(f)["abi"]
+
+with open("artifacts/contracts/RewardToken.sol/RewardToken.json", "r") as f:
+    ABI_REWARD = json.load(f)["abi"]
+
+def save_global_as_npz(model: nn.Module, path_npz: str):
+    sd = model.state_dict()
+    arrays = {k: v.detach().cpu().numpy().astype(np.float32) for k, v in sd.items()}
+    np.savez(path_npz, **arrays)
+
+def load_update_npz(path):
+    with np.load(path) as data:
+        return {k: torch.tensor(data[k]) for k in data.files}
+
+def unmask(masked_updates, seeds):
+    shapes = {k: masked_updates[0][k].shape for k in masked_updates[0]}
+    rngs = [np.random.default_rng(seed) for seed in seeds]
+    masks = []
+    for rng in rngs:
+        mask = {k: torch.from_numpy(rng.normal(0, 0.01, size=shapes[k]).astype(np.float32)) for k in shapes}
+        masks.append(mask)
+    unmasked = []
+    for i, upd in enumerate(masked_updates):
+        client_unmasked = {}
+        for k in upd:
+            client_unmasked[k] = upd[k] - masks[i][k]
+        unmasked.append(client_unmasked)
+    return unmasked
+
+def federated_average(updates):
+    keys = updates[0].keys()
+    avg = {}
+    for k in keys:
+        avg[k] = torch.mean(torch.stack([upd[k] for upd in updates]), dim=0)
+    return avg
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--coord", required=False, help="Coordinator contract address")
+    parser.add_argument("--pk", required=True, help="Private key of aggregator/owner (Account #0 on Hardhat)")
+    parser.add_argument("--round_dir", required=True, help="Directory for round data")
+    parser.add_argument("--round_id", required=False, type=int, default=1, help="Round number (default: 1)")
+    args = parser.parse_args()
+
+    with open("deployed.json") as f:
+        config = json.load(f)
+
+    COORD_ADDRESS = args.coord or config["coordinator"]
+    REWARD_ADDRESS = config["reward"]
+    RPC_URL = config.get("rpc", "http://127.0.0.1:8546")
+
+    w3 = Web3(Web3.HTTPProvider(RPC_URL))
+    acct = w3.eth.account.from_key(args.pk)
+    coord = w3.eth.contract(address=Web3.to_checksum_address(COORD_ADDRESS), abi=ABI_COORD)
+    reward = w3.eth.contract(address=Web3.to_checksum_address(REWARD_ADDRESS), abi=ABI_REWARD)
+
+    coord_owner = coord.functions.owner().call()
+    if coord_owner.lower() != acct.address.lower():
+        raise SystemExit(f"[Abort] Coordinator.owner() is {coord_owner}, but tx sender will be {acct.address}. Use correct PK.")
+
+    reward_owner = reward.functions.owner().call()
+    if reward_owner.lower() != Web3.to_checksum_address(COORD_ADDRESS).lower():
+        raise SystemExit("[Abort] RewardToken.owner() is not the Coordinator.")
+
+    os.makedirs(args.round_dir, exist_ok=True)
+
+    participants = [
+        Web3.to_checksum_address("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"),
+        Web3.to_checksum_address("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"),
+        Web3.to_checksum_address("0x90F79bf6EB2c4f870365E785982E1f101E93b906"),
+    ]
+
+    seeds = [1, 2, 3]
+    masked_updates = []
+    for addr in participants:
+        path = os.path.join(args.round_dir, f"{addr}_update.npz")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Update file for participant {addr} missing: {path}")
+        masked = load_update_npz(path)
+        masked_updates.append(masked)
+
+    unmasked_updates = unmask(masked_updates, seeds)
+
+    avg_shared = federated_average(unmasked_updates)
+
+    model = FedPersonalizedMLP(in_dim=30)
+    if os.path.exists(os.path.join(args.round_dir, "global_model.npz")):
+        prev_sd = torch.load(os.path.join(args.round_dir, "global_model.npz"), map_location="cpu")
+        model.load_state_dict(prev_sd, strict=False)
+
+    model_sd = model.state_dict()
+    merge_global_state(model_sd, avg_shared)
+    model.load_state_dict(model_sd)
+
+    global_model_path = os.path.join(args.round_dir, "global_model.npz")
+    save_global_as_npz(model, global_model_path)
+
+    with open(global_model_path, "rb") as f:
+        model_bytes = f.read()
+    model_hash_b32 = HexBytes(w3.keccak(model_bytes))
+
+    tx = coord.functions.finalizeRound(
+        model_hash_b32,
+        participants,
+        100
+    ).build_transaction({
+        "from": acct.address,
+        "nonce": w3.eth.get_transaction_count(acct.address),
+        "maxFeePerGas": w3.to_wei("2", "gwei"),
+        "maxPriorityFeePerGas": w3.to_wei("1", "gwei"),
+        "gas": 3_000_000,
+        "chainId": w3.eth.chain_id,
+    })
+
+    signed = w3.eth.account.sign_transaction(tx, args.pk)
+    tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+    print(f"🎉 Round {args.round_id} finalized with global hash: {model_hash_b32.hex()}")
+    print(f"🔗 Transaction hash: {tx_hash.hex()}")
+
+if __name__ == "__main__":
+    main()
+=======
+>>>>>>> 8d64af2 (replaced troublesome uagents with simulation)
 import os
 import sys
 import argparse
@@ -164,3 +308,7 @@ async def aggregate_round(ctx: Context):
 
 if __name__ == "__main__":
     agg_agent.run()
+<<<<<<< HEAD
+=======
+>>>>>>> 5b9db2d (agent networking sample)
+>>>>>>> 8d64af2 (replaced troublesome uagents with simulation)

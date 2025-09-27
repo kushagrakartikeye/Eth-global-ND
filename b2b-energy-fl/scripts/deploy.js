@@ -22,7 +22,7 @@ async function main() {
   await reward.transferOwnership(coordinator.target);
   console.log("✅ Transferred RewardToken ownership to Coordinator");
 
-  // RPC url
+  // RPC url (default localhost:8546 unless overridden)
   const rpc = process.env.RPC_URL || `http://127.0.0.1:${process.env.PORT || 8546}`;
 
   // Hardhat default keys (for local dev only)
@@ -32,23 +32,22 @@ async function main() {
   let clientAddrs = {};
 
   if (localNetworks.includes(hre.network.name)) {
-    // Get the default mnemonic
+    // Derive from Hardhat's default mnemonic
     let mnemonic;
     if (ethers.provider._mnemonic) {
       mnemonic = ethers.provider._mnemonic().phrase;
     } else {
-      // fallback to Hardhat default mnemonic
       mnemonic = "test test test test test test test test test test test junk";
     }
-    // Use Ethers v6 HDNodeWallet and Mnemonic
     const { Mnemonic, HDNodeWallet } = ethers;
     const mnemonicObj = Mnemonic.fromPhrase(mnemonic);
-    // Master node at m/44'/60'/0'/0/0
+
+    // Owner (index 0)
     const masterNode = HDNodeWallet.fromMnemonic(mnemonicObj, "m/44'/60'/0'/0/0");
     ownerPrivateKey = masterNode.privateKey.replace("0x", "");
-    // Derive client keys/addresses
+
+    // Clients (indices 1–3)
     for (let i = 1; i <= 3; i++) {
-      // Derive from m/44'/60'/0'/0/{i}
       const childNode = HDNodeWallet.fromMnemonic(mnemonicObj, `m/44'/60'/0'/0/${i}`);
       clientKeys[`client${i}`] = childNode.privateKey.replace("0x", "");
       clientAddrs[`client${i}`] = signers[i].address;
@@ -59,9 +58,6 @@ async function main() {
   } else if (process.env.OWNER_PK) {
     ownerPrivateKey = process.env.OWNER_PK;
     // You must set client keys/addresses for live networks manually
-    // Example:
-    // clientKeys = { client1: process.env.CLIENT1_PK, ... }
-    // clientAddrs = { client1: process.env.CLIENT1_ADDR, ... }
   }
 
   const data = {
@@ -71,7 +67,7 @@ async function main() {
     owner: deployer.address,
     owner_pk: ownerPrivateKey,
     client_keys: clientKeys,
-    client_addrs: clientAddrs
+    client_addrs: clientAddrs,
   };
 
   fs.writeFileSync(path.join(__dirname, "../deployed.json"), JSON.stringify(data, null, 2));
