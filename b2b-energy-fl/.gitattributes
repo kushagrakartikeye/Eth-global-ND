@@ -1,0 +1,4 @@
+*.py merge=ours
+*.js merge=ours
+*.json merge=ours
+*.sol merge=ours

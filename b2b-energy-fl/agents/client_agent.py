@@ -1,27 +1,38 @@
 import os
 import json
 import socket
+import argparse
 from pydantic import BaseModel
 from uagents import Agent, Context, Protocol
 
-AGENT_NAME = os.environ.get("AGENT_NAME", "client1")
-AGENT_PORT = os.environ.get("AGENT_PORT", "8001")
-COORDINATOR_ADDRESS = os.environ.get("COORDINATOR_ADDRESS", "http://127.0.0.1:8005")
+# --- Argparse for simulate_agents.py ---
+parser = argparse.ArgumentParser()
+parser.add_argument("--client", type=str, required=True, help="Client name (e.g. client1)")
+parser.add_argument("--coord", type=str, required=True, help="Coordinator contract address")
+parser.add_argument("--pk", type=str, required=True, help="Private key")
+parser.add_argument("--round_dir", type=str, required=True, help="Round directory path")
+parser.add_argument("--round", type=int, required=True, help="Round ID")
+parser.add_argument("--port", type=int, default=8010, help="Port for this client agent")
+args = parser.parse_args()
+
+AGENT_NAME = args.client
+AGENT_PORT = args.port
+COORDINATOR_ADDRESS = args.coord
 
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('10.255.255.255', 1))
+        s.connect(("10.255.255.255", 1))
         IP = s.getsockname()[0]
     except Exception:
-        IP = '127.0.0.1'
+        IP = "127.0.0.1"
     finally:
         s.close()
     return IP
 
 ENDPOINT = f"http://{get_local_ip()}:{AGENT_PORT}"
 
-# 👇 Explicit endpoint
+# Explicit endpoint
 client_agent = Agent(name=AGENT_NAME, endpoint=[ENDPOINT])
 
 class RegisterMessage(BaseModel):
@@ -53,4 +64,5 @@ class ClientChatProtocol(Protocol):
 client_agent.include(ClientChatProtocol())
 
 if __name__ == "__main__":
+    os.environ["PORT"] = str(AGENT_PORT)   # <- Correct place
     client_agent.run()
